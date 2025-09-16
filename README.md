@@ -1,72 +1,40 @@
-# 🤖 Kavra Bot
+# Kavra Bot
 
-<div align="center">
-  <img alt="Kavra Bot - AI-powered chatbot with LangGraph" src="app/(chat)/opengraph-image.png">
-  <h1>Kavra Bot</h1>
-  <p><strong>AI-powered chatbot built with Next.js, LangGraph, and GPT-4o-mini</strong></p>
-</div>
+A modern AI-powered chatbot built with Next.js, LangGraph, and GPT-4o-mini. Features real-time streaming conversations, persistent chat history, and a beautiful user interface.
 
-<p align="center">
-  <a href="#features"><strong>Features</strong></a> ·
-  <a href="#architecture"><strong>Architecture</strong></a> ·
-  <a href="#installation"><strong>Installation</strong></a> ·
-  <a href="#configuration"><strong>Configuration</strong></a> ·
-  <a href="#langgraph-integration"><strong>LangGraph Integration</strong></a> ·
-  <a href="#deployment"><strong>Deployment</strong></a>
-</p>
-<br/>
+## Features
 
-## ✨ Features
+- **LangGraph Backend**: Pure LangGraph workflow engine with GPT-4o-mini
+- **Real-time Chat**: Streaming AI responses with Server-Sent Events
+- **Authentication**: Secure user authentication with NextAuth.js
+- **Chat History**: Persistent chat history with PostgreSQL
+- **Modern UI**: Clean interface built with shadcn/ui and Tailwind CSS
+- **Responsive Design**: Mobile-first design with dark/light theme support
+- **State Management**: Advanced workflow state management with LangGraph
 
-- **�� LangGraph Backend**: Pure LangGraph workflow engine with GPT-4o-mini
-- **💬 Real-time Chat**: Streaming AI responses with Server-Sent Events
-- **🔐 Authentication**: Secure user authentication with NextAuth.js
-- **�� Chat History**: Persistent chat history with PostgreSQL
-- **🎨 Modern UI**: Beautiful interface built with shadcn/ui and Tailwind CSS
-- **📱 Responsive**: Mobile-first design with dark/light theme support
-- **🔄 State Management**: Advanced workflow state management with LangGraph
-- **⚡ Performance**: Optimized with Next.js App Router and React Server Components
+## Tech Stack
 
-## ��️ Architecture
+- **Frontend**: Next.js 14, React, TypeScript
+- **Backend**: LangGraph, OpenAI GPT-4o-mini
+- **Database**: PostgreSQL
+- **Authentication**: NextAuth.js
+- **Styling**: Tailwind CSS, shadcn/ui
+- **Deployment**: Vercel (recommended)
 
-### Core Technologies
-
-- **[Next.js 14](https://nextjs.org)** - React framework with App Router
-- **[LangGraph](https://langchain-ai.github.io/langgraph/)** - Workflow orchestration engine
-- **[OpenAI GPT-4o-mini](https://openai.com)** - AI model provider
-- **[PostgreSQL](https://postgresql.org)** - Database for chat history
-- **[NextAuth.js](https://authjs.dev)** - Authentication
-- **[shadcn/ui](https://ui.shadcn.com)** - UI components with Tailwind CSS
-
-### Project Structure
-├── app/
-│ ├── (auth)/ # Authentication pages
-│ └── (chat)/ # Chat application
-│ ├── api/
-│ │ ├── chat/ # Main chat API
-│ │ └── langgraph/ # LangGraph workflow API
-│ └── chat/[id]/ # Individual chat pages
-├── components/ # React components
-├── lib/
-│ ├── ai/ # AI configuration
-│ ├── langgraph/ # LangGraph workflow files
-│ └── db/ # Database schema and queries
-└── hooks/ # Custom React hooks
-
-## �� Installation
+## Quick Start
 
 ### Prerequisites
 
-- Node.js 18+ 
+- Node.js 18+
 - PostgreSQL database
 - OpenAI API key
 
-### Setup
+### Installation
 
 1. **Clone the repository**
 ```bash
-git clone <your-repo-url>
-cd kavra-bot
+git clone https://github.com/burak5198/kavra_bot.git
+cd kavra_bot
 ```
 
 2. **Install dependencies**
@@ -74,37 +42,45 @@ cd kavra-bot
 pnpm install
 ```
 
-3. **Environment Configuration**
-Create a `.env.local` file with the following variables:
-
+3. **Environment setup**
+Create a `.env.local` file:
 ```env
-# OpenAI Configuration
 OPENAI_API_KEY=your_openai_api_key_here
-
-# Authentication
 AUTH_SECRET=your_random_secret_string
-
-# Database
 POSTGRES_URL=your_postgresql_connection_string
-
-# Optional: For production
 NEXTAUTH_URL=http://localhost:3000
 ```
 
-4. **Database Setup**
+4. **Database setup**
 ```bash
-# Run database migrations
 pnpm db:migrate
 ```
 
-5. **Start Development Server**
+5. **Start development server**
 ```bash
 pnpm dev
 ```
 
-Visit [http://localhost:3000](http://localhost:3000) to see your bot in action!
+Visit [http://localhost:3000](http://localhost:3000) to start chatting!
 
-## ⚙️ Configuration
+
+## LangGraph Integration
+
+The bot uses a custom LangGraph workflow with these nodes:
+
+1. **process_input** - Processes user input and prepares context
+2. **analyze_intent** - Analyzes user intent and determines response strategy
+3. **use_tools** - Executes any necessary tools or functions
+4. **generate_response** - Generates the final AI response using GPT-4o-mini
+
+### Workflow Files
+
+- `lib/langgraph/workflow.ts` - Main workflow definition
+- `lib/langgraph/nodes.ts` - Individual node implementations
+- `lib/langgraph/config.ts` - OpenAI model configuration
+- `lib/langgraph/state.ts` - Workflow state management
+
+## Configuration
 
 ### OpenAI Setup
 
@@ -115,8 +91,6 @@ Visit [http://localhost:3000](http://localhost:3000) to see your bot in action!
 
 **Option 1: Local PostgreSQL**
 ```bash
-# Install PostgreSQL locally
-# Create a database
 createdb kavra_bot
 ```
 
@@ -125,72 +99,7 @@ createdb kavra_bot
 - [Supabase](https://supabase.com) - Open source Firebase alternative
 - [Railway](https://railway.app) - Database hosting
 
-### Authentication
-
-The app uses NextAuth.js with guest authentication enabled by default. Users can:
-- Chat as guests (limited messages per day)
-- Sign up for full access
-- Manage their chat history
-
-## 🔧 LangGraph Integration
-
-### Workflow Architecture
-
-Kavra Bot uses a custom LangGraph workflow with the following nodes:
-
-1. **`process_input`** - Processes user input and prepares context
-2. **`analyze_intent`** - Analyzes user intent and determines response strategy
-3. **`use_tools`** - Executes any necessary tools or functions
-4. **`generate_response`** - Generates the final AI response using GPT-4o-mini
-
-### Workflow Files
-
-- **`lib/langgraph/workflow.ts`** - Main workflow definition
-- **`lib/langgraph/nodes.ts`** - Individual node implementations
-- **`lib/langgraph/config.ts`** - OpenAI model configuration
-- **`lib/langgraph/state.ts`** - Workflow state management
-
-### API Endpoints
-
-- **`/api/chat`** - Main chat endpoint (routes to LangGraph)
-- **`/api/langgraph`** - Direct LangGraph workflow execution
-
-## 🎨 Customization
-
-### Branding
-
-Update the following files to customize your bot:
-
-- **`app/layout.tsx`** - Browser title and meta description
-- **`components/app-sidebar.tsx`** - Sidebar branding
-- **`components/chat-header.tsx`** - Header customization
-
-### Model Configuration
-
-Modify **`lib/ai/models.ts`** to change available models:
-
-```typescript
-export const chatModels: Array<ChatModel> = [
-  {
-    id: 'gpt-4o-mini-chat',
-    name: 'GPT-4o Mini Chat',
-    description: 'Your custom description here',
-  },
-];
-```
-
-### Workflow Customization
-
-Edit **`lib/langgraph/nodes.ts`** to customize the AI behavior:
-
-```typescript
-// Add custom logic to any node
-export async function generateResponse(state: WorkflowState): Promise<Partial<WorkflowState>> {
-  // Your custom AI logic here
-}
-```
-
-## �� Deployment
+## Deployment
 
 ### Vercel (Recommended)
 
@@ -224,32 +133,41 @@ EXPOSE 3000
 CMD ["npm", "start"]
 ```
 
-### Other Platforms
+## Customization
 
-- **Railway** - Easy deployment with PostgreSQL
-- **Render** - Full-stack hosting
-- **DigitalOcean App Platform** - Container deployment
+### Branding
 
-## �� Monitoring
+Update the following files to customize your bot:
 
-### LangGraph Monitoring
+- `app/layout.tsx` - Browser title and meta description
+- `components/app-sidebar.tsx` - Sidebar branding
+- `components/chat-header.tsx` - Header customization
 
-Monitor your LangGraph workflows:
+### Model Configuration
 
-1. **Check API logs** in your deployment platform
-2. **Monitor database** for chat history and user activity
-3. **Track OpenAI usage** in the OpenAI dashboard
+Modify `lib/ai/models.ts` to change available models:
 
-### Performance Metrics
+```typescript
+export const chatModels: Array<ChatModel> = [
+  {
+    id: 'gpt-4o-mini-chat',
+    name: 'GPT-4o Mini Chat',
+    description: 'Your custom description here',
+  },
+];
+```
 
-- Response time monitoring
-- Token usage tracking
-- User engagement metrics
-- Error rate monitoring
+### Workflow Customization
 
-## �� Development
+Edit `lib/langgraph/nodes.ts` to customize the AI behavior:
 
-### Available Scripts
+```typescript
+export async function generateResponse(state: WorkflowState): Promise<Partial<WorkflowState>> {
+  // Your custom AI logic here
+}
+```
+
+## Available Scripts
 
 ```bash
 # Development
@@ -266,23 +184,24 @@ pnpm test         # Run tests
 pnpm test:e2e     # Run end-to-end tests
 ```
 
-### Project Commands
+## Monitoring
 
-```bash
-# Install dependencies
-pnpm install
+### LangGraph Monitoring
 
-# Run development server
-pnpm dev
+Monitor your LangGraph workflows:
 
-# Build and start production
-pnpm build && pnpm start
+1. Check API logs in your deployment platform
+2. Monitor database for chat history and user activity
+3. Track OpenAI usage in the OpenAI dashboard
 
-# Run database migrations
-pnpm db:migrate
-```
+### Performance Metrics
 
-## 🤝 Contributing
+- Response time monitoring
+- Token usage tracking
+- User engagement metrics
+- Error rate monitoring
+
+## Contributing
 
 1. Fork the repository
 2. Create a feature branch: `git checkout -b feature/amazing-feature`
@@ -290,11 +209,11 @@ pnpm db:migrate
 4. Push to the branch: `git push origin feature/amazing-feature`
 5. Open a Pull Request
 
-## 📝 License
+## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - [Next.js](https://nextjs.org) - React framework
 - [LangGraph](https://langchain-ai.github.io/langgraph/) - Workflow orchestration
@@ -304,9 +223,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-<div align="center">
-  <p>Built with ❤️ using Next.js, LangGraph, and GPT-4o-mini</p>
-  <p>
-    <a href="#top">⬆️ Back to Top</a>
-  </p>
-</div>
+Built with ❤️ using Next.js, LangGraph, and GPT-4o-mini
