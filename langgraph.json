@@ -1,0 +1,9 @@
+{
+    "dependencies": [
+        "."
+    ],
+    "graphs": {
+        "agent": "./lib/langgraph/workflow.ts"
+    },
+    "env": ".env"
+}

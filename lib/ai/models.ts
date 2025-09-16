@@ -1,4 +1,4 @@
-export const DEFAULT_CHAT_MODEL: string = 'chat-model';
+export const DEFAULT_CHAT_MODEL: string = 'gpt-4o-mini-chat';
 
 export interface ChatModel {
   id: string;
@@ -8,14 +8,8 @@ export interface ChatModel {
 
 export const chatModels: Array<ChatModel> = [
   {
-    id: 'chat-model',
-    name: 'Grok Vision',
-    description: 'Advanced multimodal model with vision and text capabilities',
-  },
-  {
-    id: 'chat-model-reasoning',
-    name: 'Grok Reasoning',
-    description:
-      'Uses advanced chain-of-thought reasoning for complex problems',
+    id: 'gpt-4o-mini-chat',
+    name: 'GPT-4o Mini Chat',
+    description: 'GPT-4o-mini powered agent with LangGraph workflow capabilities',
   },
 ];

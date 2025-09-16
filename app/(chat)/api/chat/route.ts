@@ -21,13 +21,10 @@ import {
 import { updateChatLastContextById } from '@/lib/db/queries';
 import { convertToUIMessages, generateUUID } from '@/lib/utils';
 import { generateTitleFromUserMessage } from '../../actions';
-import { createDocument } from '@/lib/ai/tools/create-document';
-import { updateDocument } from '@/lib/ai/tools/update-document';
-import { requestSuggestions } from '@/lib/ai/tools/request-suggestions';
-import { getWeather } from '@/lib/ai/tools/get-weather';
 import { isProductionEnvironment } from '@/lib/constants';
 import { myProvider } from '@/lib/ai/providers';
 import { entitlementsByUserType } from '@/lib/ai/entitlements';
+import { openai } from '@ai-sdk/openai';
 import { postRequestBodySchema, type PostRequestBody } from './schema';
 import { geolocation } from '@vercel/functions';
 import {
@@ -35,6 +32,7 @@ import {
   type ResumableStreamContext,
 } from 'resumable-stream';
 import { after } from 'next/server';
+import { NextResponse } from 'next/server';
 import { ChatSDKError } from '@/lib/errors';
 import type { ChatMessage } from '@/lib/types';
 import type { ChatModel } from '@/lib/ai/models';
@@ -123,18 +121,6 @@ export async function POST(request: Request) {
       }
     }
 
-    const messagesFromDb = await getMessagesByChatId({ id });
-    const uiMessages = [...convertToUIMessages(messagesFromDb), message];
-
-    const { longitude, latitude, city, country } = geolocation(request);
-
-    const requestHints: RequestHints = {
-      longitude,
-      latitude,
-      city,
-      country,
-    };
-
     await saveMessages({
       messages: [
         {
@@ -151,105 +137,89 @@ export async function POST(request: Request) {
     const streamId = generateUUID();
     await createStreamId({ streamId, chatId: id });
 
-    let finalUsage: LanguageModelUsage | undefined;
+    // ALWAYS use LangGraph - no more model selection
+    try {
+      const response = await fetch(`${request.url.split('/api/chat')[0]}/api/langgraph`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Cookie': request.headers.get('Cookie') || '',
+        },
+        body: JSON.stringify({
+          message,
+          chatId: id,
+          selectedVisibilityType,
+        }),
+      });
 
-    const stream = createUIMessageStream({
-      execute: ({ writer: dataStream }) => {
-        const result = streamText({
-          model: myProvider.languageModel(selectedChatModel),
-          system: systemPrompt({ selectedChatModel, requestHints }),
-          messages: convertToModelMessages(uiMessages),
-          stopWhen: stepCountIs(5),
-          experimental_activeTools:
-            selectedChatModel === 'chat-model-reasoning'
-              ? []
-              : [
-                  'getWeather',
-                  'createDocument',
-                  'updateDocument',
-                  'requestSuggestions',
-                ],
-          experimental_transform: smoothStream({ chunking: 'word' }),
-          tools: {
-            getWeather,
-            createDocument: createDocument({ session, dataStream }),
-            updateDocument: updateDocument({ session, dataStream }),
-            requestSuggestions: requestSuggestions({
-              session,
-              dataStream,
+      if (!response.ok) {
+        throw new Error('LangGraph API request failed');
+      }
+
+      const langGraphResult = await response.json();
+      
+      // Create a streaming response using the same pattern as regular chat
+      const stream = createUIMessageStream({
+        execute: ({ writer: dataStream }) => {
+          const result = streamText({
+            model: openai('gpt-4o-mini'), // Always use OpenAI directly
+            messages: [
+              {
+                role: 'system',
+                content: 'Respond with exactly this text: ' + String(langGraphResult.message.content)
+              }
+            ],
+            onFinish: async ({ text, usage }) => {
+              // Messages are already saved by the LangGraph route
+            },
+          });
+
+          result.consumeStream();
+
+          dataStream.merge(
+            result.toUIMessageStream({
+              sendReasoning: false,
             }),
-          },
-          experimental_telemetry: {
-            isEnabled: isProductionEnvironment,
-            functionId: 'stream-text',
-          },
-          onFinish: ({ usage }) => {
-            finalUsage = usage;
-            dataStream.write({ type: 'data-usage', data: usage });
-          },
-        });
+          );
 
-        result.consumeStream();
-
-        dataStream.merge(
-          result.toUIMessageStream({
-            sendReasoning: true,
-          }),
-        );
-      },
-      generateId: generateUUID,
-      onFinish: async ({ messages }) => {
-        await saveMessages({
-          messages: messages.map((message) => ({
-            id: message.id,
-            role: message.role,
-            parts: message.parts,
-            createdAt: new Date(),
-            attachments: [],
-            chatId: id,
-          })),
-        });
-
-        if (finalUsage) {
-          try {
-            await updateChatLastContextById({
-              chatId: id,
-              context: finalUsage,
+          // Send workflow context if available
+          if (langGraphResult.workflow) {
+            dataStream.write({
+              type: 'data-workflow',
+              data: {
+                context: langGraphResult.context,
+                workflow: langGraphResult.workflow,
+              },
             });
-          } catch (err) {
-            console.warn('Unable to persist last usage for chat', id, err);
           }
-        }
-      },
-      onError: () => {
-        return 'Oops, an error occurred!';
-      },
-    });
+        },
+        generateId: generateUUID,
+        onFinish: async ({ messages }) => {
+          // Messages are already saved by the LangGraph route
+        },
+        onError: () => {
+          return 'Oops, an error occurred while processing your request!';
+        },
+      });
 
-    const streamContext = getStreamContext();
+      const streamContext = getStreamContext();
 
-    if (streamContext) {
-      return new Response(
-        await streamContext.resumableStream(streamId, () =>
-          stream.pipeThrough(new JsonToSseTransformStream()),
-        ),
-      );
-    } else {
-      return new Response(stream.pipeThrough(new JsonToSseTransformStream()));
+      if (streamContext) {
+        return new Response(
+          await streamContext.resumableStream(streamId, () =>
+            stream.pipeThrough(new JsonToSseTransformStream()),
+          ),
+        );
+      } else {
+        return new Response(stream.pipeThrough(new JsonToSseTransformStream()));
+      }
+    } catch (error) {
+      console.error('LangGraph integration error:', error);
+      return new ChatSDKError('offline:chat').toResponse();
     }
   } catch (error) {
     if (error instanceof ChatSDKError) {
       return error.toResponse();
-    }
-
-    // Check for Vercel AI Gateway credit card error
-    if (
-      error instanceof Error &&
-      error.message?.includes(
-        'AI Gateway requires a valid credit card on file to service requests',
-      )
-    ) {
-      return new ChatSDKError('bad_request:activate_gateway').toResponse();
     }
 
     console.error('Unhandled error in chat API:', error);

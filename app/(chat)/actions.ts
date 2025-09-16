@@ -9,6 +9,7 @@ import {
 } from '@/lib/db/queries';
 import type { VisibilityType } from '@/components/visibility-selector';
 import { myProvider } from '@/lib/ai/providers';
+import { openai } from '@ai-sdk/openai';
 
 export async function saveChatModelAsCookie(model: string) {
   const cookieStore = await cookies();
@@ -20,9 +21,13 @@ export async function generateTitleFromUserMessage({
 }: {
   message: UIMessage;
 }) {
+  const useDirectOpenAI = Boolean(process.env.OPENAI_API_KEY);
+
   const { text: title } = await generateText({
-    model: myProvider.languageModel('title-model'),
-    system: `\n
+    model: useDirectOpenAI
+      ? openai('gpt-4o-mini')
+      : myProvider.languageModel('title-model'),
+    system: `
     - you will generate a short title based on the first message a user begins a conversation with
     - ensure it is not more than 80 characters long
     - the title should be a summary of the user's message
