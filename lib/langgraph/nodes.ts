@@ -3,6 +3,7 @@ import { HumanMessage, AIMessage, SystemMessage } from '@langchain/core/messages
 import { createLangGraphModel, defaultLangGraphConfig } from './config';
 import { judgeIntent } from './intent';
 import {  todaySolvedCount, testResultsSummary, errorPatterns } from './student';
+import { classifyTopic } from './classifier';
 
 export async function processUserInput(state: AgentState) {
   // Simply add the user input to messages and move to intent analysis
@@ -44,6 +45,13 @@ export async function analyzeIntent(state: AgentState) {
     isOutOfScope = label === 'out_of_scope';
 
     if (!isOutOfScope) {
+    // Topic classifier path (embedding-based), only when in-scope and not matched above
+    const topicResult = await classifyTopic(original);
+    (state as any).context = { ...state.context, classifierTopic: topicResult.topic, classifierScores: topicResult.scores };
+    // For now, always route to classifier tool and just print agent working message
+    intent = 'classifier_topic';
+    needsTool = true;
+    suggestedTools = ['classifier_topic'];
     if (isStudentInsights) {
       intent = 'student_insights';
       needsTool = true;
@@ -91,6 +99,15 @@ export async function useTools(state: AgentState) {
             timestamp: new Date().toISOString(),
           };
           break;
+        case 'classifier_topic': {
+          const topic = (state.context as any).classifierTopic as string;
+          let msg = '';
+          if (topic === 'danisman') msg = 'danışman ajanı çalışıyor.';
+          else if (topic === 'kisisel_analiz') msg = 'kişisel analiz ajanı çalışıyor.';
+          else if (topic === 'test_olusturma') msg = 'test oluşturma ajanı çalışıyor.';
+          results.classifier_topic = { topic, message: msg };
+          break;
+        }
         case 'document':
           // Simulate document tool
           results.document = {
@@ -152,6 +169,20 @@ export async function generateResponse(state: AgentState) {
   }
   
   if (state.context.toolResults) {
+    // If classifier topic produced a message, short-circuit and return it (no LLM call)
+    if (state.context.toolResults.classifier_topic) {
+      const { message } = state.context.toolResults.classifier_topic;
+      const ai = new AIMessage(message);
+      return {
+        messages: [...state.messages, ai],
+        currentStep: 'complete',
+        isComplete: true,
+        context: {
+          ...state.context,
+          finalResponse: message,
+        },
+      };
+    }
     // For student_insights, craft Turkish prompts to format natural-language answers
     if (state.context.toolResults.student_insights) {
       const si = state.context.toolResults.student_insights;

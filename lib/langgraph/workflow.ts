@@ -2,6 +2,7 @@ import { AgentState } from './state';
 import { generateResponse } from './nodes';
 import { judgeIntent } from './intent';
 import { todaySolvedCount, testResultsSummary, errorPatterns } from './student';
+import { classifyTopic } from './classifier';
 import { HumanMessage } from '@langchain/core/messages';
 
 // Simplified workflow - just generate response directly
@@ -32,6 +33,12 @@ export async function runAgentWorkflow(initialState: AgentState): Promise<AgentS
       isOutOfScope = label === 'out_of_scope';
 
       if (!isOutOfScope) {
+      // Topic classifier: route to classifier_topic to show agent working message only
+      const topicResult = await classifyTopic(initialState.userInput);
+      (initialState as any).context = { ...(initialState.context || {}), classifierTopic: topicResult.topic, classifierScores: topicResult.scores };
+      intent = 'classifier_topic';
+      tools = ['classifier_topic'];
+
       if (lower.includes('hava') || lower.includes('hava durumu') || lower.includes('weather')) {
         intent = 'weather';
         tools = ['weather'];
@@ -72,6 +79,13 @@ export async function runAgentWorkflow(initialState: AgentState): Promise<AgentS
         } else {
           toolResults.student_insights = { type: 'unknown', data: {} };
         }
+      } else if (tool === 'classifier_topic') {
+        const topic = ((initialState.context as any)?.classifierTopic) as string;
+        let message = '';
+        if (topic === 'danisman') message = 'danışman ajanı çalışıyor.';
+        else if (topic === 'kisisel_analiz') message = 'kişisel analiz ajanı çalışıyor.';
+        else if (topic === 'test_olusturma') message = 'test oluşturma ajanı çalışıyor.';
+        toolResults.classifier_topic = { topic, message };
       }
     }
     
