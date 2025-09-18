@@ -1,5 +1,6 @@
 import { AgentState } from './state';
 import { generateResponse } from './nodes';
+import { judgeIntent } from './intent';
 import { HumanMessage } from '@langchain/core/messages';
 
 // Simplified workflow - just generate response directly
@@ -9,17 +10,25 @@ export async function runAgentWorkflow(initialState: AgentState): Promise<AgentS
     const userMessage = new HumanMessage(initialState.userInput);
     const messages = [...initialState.messages, userMessage];
     
-    // Analyze intent (simplified)
+    // Analyze intent with Turkish semantic domain guard
     let intent = 'general';
     let tools: string[] = [];
-    const message = initialState.userInput.toLowerCase();
+    let isOutOfScope = false;
+    const lower = initialState.userInput.toLowerCase();
     
-    if (message.includes('weather')) {
-      intent = 'weather';
-      tools = ['weather'];
-    } else if (message.includes('document') || message.includes('create') || message.includes('write')) {
-      intent = 'document';
-      tools = ['document'];
+    const { label } = await judgeIntent(initialState.userInput);
+    isOutOfScope = label === 'out_of_scope';
+    
+    if (!isOutOfScope) {
+      if (lower.includes('hava') || lower.includes('hava durumu') || lower.includes('weather')) {
+        intent = 'weather';
+        tools = ['weather'];
+      } else if (lower.includes('belge') || lower.includes('doküman') || lower.includes('document') || lower.includes('yaz') || lower.includes('oluştur')) {
+        intent = 'document';
+        tools = ['document'];
+      }
+    } else {
+      intent = 'out_of_scope';
     }
     
     // Use tools (simplified)
@@ -52,6 +61,7 @@ export async function runAgentWorkflow(initialState: AgentState): Promise<AgentS
         intent,
         tools,
         toolResults,
+        isOutOfScope,
       },
     };
     

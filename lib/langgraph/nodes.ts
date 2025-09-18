@@ -1,6 +1,7 @@
 import { AgentState } from './state';
 import { HumanMessage, AIMessage, SystemMessage } from '@langchain/core/messages';
 import { createLangGraphModel, defaultLangGraphConfig } from './config';
+import { judgeIntent } from './intent';
 
 export async function processUserInput(state: AgentState) {
   // Simply add the user input to messages and move to intent analysis
@@ -17,30 +18,41 @@ export async function processUserInput(state: AgentState) {
 }
 
 export async function analyzeIntent(state: AgentState) {
-  // Simple keyword-based intent detection
+  // Semantic domain classification in Turkish
   let intent = 'general';
   let needsTool = false;
   let suggestedTools: string[] = [];
-  
-  const message = state.userInput.toLowerCase();
-  if (message.includes('weather')) {
-    intent = 'weather';
-    needsTool = true;
-    suggestedTools = ['weather'];
-  } else if (message.includes('document') || message.includes('create') || message.includes('write')) {
-    intent = 'document';
-    needsTool = true;
-    suggestedTools = ['document'];
+  let isOutOfScope = false;
+
+  const original = state.userInput;
+  const lower = original.toLowerCase();
+
+  const { label } = await judgeIntent(original);
+  isOutOfScope = label === 'out_of_scope';
+
+  if (!isOutOfScope) {
+    if (lower.includes('hava') || lower.includes('hava durumu') || lower.includes('weather')) {
+      intent = 'weather';
+      needsTool = true;
+      suggestedTools = ['weather'];
+    } else if (lower.includes('belge') || lower.includes('doküman') || lower.includes('document') || lower.includes('yaz') || lower.includes('oluştur')) {
+      intent = 'document';
+      needsTool = true;
+      suggestedTools = ['document'];
+    }
+  } else {
+    intent = 'out_of_scope';
   }
-  
+
   return {
-    currentStep: needsTool ? 'use_tools' : 'generate_response',
+    currentStep: isOutOfScope ? 'generate_response' : (needsTool ? 'use_tools' : 'generate_response'),
     tools: suggestedTools,
     context: {
       ...state.context,
       intent,
       needsTool,
       suggestedTools,
+      isOutOfScope,
     },
   };
 }
@@ -91,6 +103,22 @@ export async function generateResponse(state: AgentState) {
   
   // Create context-aware response
   let systemPrompt = "You are a helpful AI assistant. Provide a clear, concise response to the user.";
+  
+  // Short-circuit: if out-of-scope, respond with a polite refusal aligned to student-support domain
+  if (state.context.isOutOfScope) {
+    const refusal = new AIMessage(
+      "Bu, öğrenci desteğiyle ilgili görünmüyor. Lütfen dersleriniz, ödevleriniz, sınavlarınız, ders çalışma veya üniversiteyle ilgili konular hakkında soru sorun."
+    );
+    return {
+      messages: [...state.messages, refusal],
+      currentStep: 'complete',
+      isComplete: true,
+      context: {
+        ...state.context,
+        finalResponse: refusal.content,
+      },
+    };
+  }
   
   if (state.context.toolResults) {
     systemPrompt += `\n\nTool results available: ${JSON.stringify(state.context.toolResults, null, 2)}`;
