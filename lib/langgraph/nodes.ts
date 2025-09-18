@@ -2,6 +2,7 @@ import { AgentState } from './state';
 import { HumanMessage, AIMessage, SystemMessage } from '@langchain/core/messages';
 import { createLangGraphModel, defaultLangGraphConfig } from './config';
 import { judgeIntent } from './intent';
+import {  todaySolvedCount, testResultsSummary, errorPatterns } from './student';
 
 export async function processUserInput(state: AgentState) {
   // Simply add the user input to messages and move to intent analysis
@@ -27,11 +28,27 @@ export async function analyzeIntent(state: AgentState) {
   const original = state.userInput;
   const lower = original.toLowerCase();
 
-  const { label } = await judgeIntent(original);
-  isOutOfScope = label === 'out_of_scope';
+  // Detect personalized student insights prompts (whitelist) BEFORE judge
+  const isStudentInsights = [
+    'bugün ne kadar soru çözdüm',
+    'test sonuçlarım neler',
+    'hangi tarz sorularda hata yapıyorum',
+  ].some((k) => lower.includes(k));
 
-  if (!isOutOfScope) {
-    if (lower.includes('hava') || lower.includes('hava durumu') || lower.includes('weather')) {
+  if (isStudentInsights) {
+    intent = 'student_insights';
+    needsTool = true;
+    suggestedTools = ['student_insights'];
+  } else {
+    const { label } = await judgeIntent(original);
+    isOutOfScope = label === 'out_of_scope';
+
+    if (!isOutOfScope) {
+    if (isStudentInsights) {
+      intent = 'student_insights';
+      needsTool = true;
+      suggestedTools = ['student_insights'];
+    } else if (lower.includes('hava') || lower.includes('hava durumu') || lower.includes('weather')) {
       intent = 'weather';
       needsTool = true;
       suggestedTools = ['weather'];
@@ -40,8 +57,9 @@ export async function analyzeIntent(state: AgentState) {
       needsTool = true;
       suggestedTools = ['document'];
     }
-  } else {
-    intent = 'out_of_scope';
+    } else {
+      intent = 'out_of_scope';
+    }
   }
 
   return {
@@ -82,6 +100,19 @@ export async function useTools(state: AgentState) {
             content: 'Document content based on user request',
           };
           break;
+        case 'student_insights': {
+          const text = state.context.lastUserMessage?.toLowerCase() || '';
+          if (text.includes('bugün ne kadar soru çözdüm')) {
+            results.student_insights = { type: 'today_count', data: todaySolvedCount() };
+          } else if (text.includes('test sonuçlarım neler')) {
+            results.student_insights = { type: 'results', data: testResultsSummary() };
+          } else if (text.includes('hangi tarz sorularda hata yapıyorum')) {
+            results.student_insights = { type: 'error_patterns', data: errorPatterns() };
+          } else {
+            results.student_insights = { type: 'unknown', data: {} };
+          }
+          break;
+        }
       }
     } catch (error) {
       console.error(`Error using tool ${tool}:`, error);
@@ -121,8 +152,20 @@ export async function generateResponse(state: AgentState) {
   }
   
   if (state.context.toolResults) {
-    systemPrompt += `\n\nTool results available: ${JSON.stringify(state.context.toolResults, null, 2)}`;
-    systemPrompt += "\nUse this information to provide a helpful response.";
+    // For student_insights, craft Turkish prompts to format natural-language answers
+    if (state.context.toolResults.student_insights) {
+      const si = state.context.toolResults.student_insights;
+      if (si.type === 'today_count') {
+        systemPrompt += `\n\nKullanıcı sorusu: 'Bugün ne kadar soru çözdüm?'\nVeri: total_questions=${si.data.total_questions}.\nCevap yönergesi: Kullanıcının bugün çözdüğü soru sayısı ${si.data.total_questions}. Bunu 1-2 cümlede Türkçe ve doğal bir üslupla ifade et.`;
+      } else if (si.type === 'results') {
+        systemPrompt += `\n\nKullanıcı sorusu: 'Test sonuçlarım neler?'\nVeri: toplam=${si.data.total_questions}, doğru=${si.data.correct_answers}, yanlış=${si.data.wrong_answers}, doğruluk=${si.data.accuracy_percentage}%.\nCevap yönergesi: Bu sonuçları kısa ve anlaşılır Türkçe bir paragrafla özetle; motive edici bir cümle ekle.`;
+      } else if (si.type === 'error_patterns') {
+        systemPrompt += `\n\nKullanıcı sorusu: 'Hangi tarz sorularda hata yapıyorum?'\nVeri: toplam yanlış=${si.data.wrong_count}, dağılım=${JSON.stringify(si.data.by_difficulty)}.\nCevap yönergesi: Yanlış sayısı ve zorluk dağılımını açıkla; 2-3 somut gelişim önerisi ver.`;
+      }
+    } else {
+      systemPrompt += `\n\nTool results available: ${JSON.stringify(state.context.toolResults, null, 2)}`;
+      systemPrompt += "\nUse this information to provide a helpful response.";
+    }
   }
   
   if (state.context.intent) {
