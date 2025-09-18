@@ -1,4 +1,4 @@
-import { AgentState } from './state';
+import { AgentState } from './schema';
 import { HumanMessage, AIMessage, SystemMessage } from '@langchain/core/messages';
 import { createLangGraphModel, defaultLangGraphConfig } from './config';
 import { judgeIntent } from './intent';
@@ -45,26 +45,13 @@ export async function analyzeIntent(state: AgentState) {
     isOutOfScope = label === 'out_of_scope';
 
     if (!isOutOfScope) {
-    // Topic classifier path (embedding-based), only when in-scope and not matched above
-    const topicResult = await classifyTopic(original);
-    (state as any).context = { ...state.context, classifierTopic: topicResult.topic, classifierScores: topicResult.scores };
-    // For now, always route to classifier tool and just print agent working message
-    intent = 'classifier_topic';
-    needsTool = true;
-    suggestedTools = ['classifier_topic'];
-    if (isStudentInsights) {
-      intent = 'student_insights';
+      // Topic classifier path (embedding-based), only when in-scope and not matched above
+      const topicResult = await classifyTopic(original);
+      (state as any).context = { ...state.context, classifierTopic: topicResult.topic, classifierScores: topicResult.scores };
+      // For now, always route to classifier tool and just print agent working message
+      intent = 'classifier_topic';
       needsTool = true;
-      suggestedTools = ['student_insights'];
-    } else if (lower.includes('hava') || lower.includes('hava durumu') || lower.includes('weather')) {
-      intent = 'weather';
-      needsTool = true;
-      suggestedTools = ['weather'];
-    } else if (lower.includes('belge') || lower.includes('doküman') || lower.includes('document') || lower.includes('yaz') || lower.includes('oluştur')) {
-      intent = 'document';
-      needsTool = true;
-      suggestedTools = ['document'];
-    }
+      suggestedTools = ['classifier_topic'];
     } else {
       intent = 'out_of_scope';
     }
@@ -90,15 +77,6 @@ export async function useTools(state: AgentState) {
   for (const tool of state.tools) {
     try {
       switch (tool) {
-        case 'weather':
-          // Simulate weather tool - in real implementation, call actual weather API
-          results.weather = {
-            temperature: '22°C',
-            condition: 'Sunny',
-            location: 'Current location',
-            timestamp: new Date().toISOString(),
-          };
-          break;
         case 'classifier_topic': {
           const topic = (state.context as any).classifierTopic as string;
           let msg = '';
@@ -108,15 +86,6 @@ export async function useTools(state: AgentState) {
           results.classifier_topic = { topic, message: msg };
           break;
         }
-        case 'document':
-          // Simulate document tool
-          results.document = {
-            created: true,
-            id: `doc_${Date.now()}`,
-            title: 'Generated Document',
-            content: 'Document content based on user request',
-          };
-          break;
         case 'student_insights': {
           const text = state.context.lastUserMessage?.toLowerCase() || '';
           if (text.includes('bugün ne kadar soru çözdüm')) {

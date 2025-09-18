@@ -1,132 +1,111 @@
-import { AgentState } from './state';
-import { generateResponse } from './nodes';
-import { judgeIntent } from './intent';
-import { todaySolvedCount, testResultsSummary, errorPatterns } from './student';
-import { classifyTopic } from './classifier';
-import { HumanMessage } from '@langchain/core/messages';
+import { AgentState } from './schema';
+import { processUserInput, analyzeIntent, useTools, generateResponse, handleError } from './nodes';
 
-// Simplified workflow - just generate response directly
-export async function runAgentWorkflow(initialState: AgentState): Promise<AgentState> {
-  try {
-    // Process user input
-    const userMessage = new HumanMessage(initialState.userInput);
-    const messages = [...initialState.messages, userMessage];
-    
-    // Analyze intent with Turkish semantic domain guard
-    let intent = 'general';
-    let tools: string[] = [];
-    let isOutOfScope = false;
-    const lower = initialState.userInput.toLowerCase();
-    
-    // Whitelist student insights prompts 
-    const isStudentInsights = [
-      'bugün ne kadar soru çözdüm',
-      'test sonuçlarım neler',
-      'hangi tarz sorularda hata yapıyorum',
-    ].some((k) => lower.includes(k));
+// Modern LangGraph-style workflow with enhanced flexibility
+export class AgentWorkflow {
+  private nodes: Map<string, (state: AgentState) => Promise<Partial<AgentState>>>;
+  private edges: Map<string, string[]>;
+  private conditionalEdges: Map<string, (state: AgentState) => string>;
 
-    if (isStudentInsights) {
-      intent = 'student_insights';
-      tools = ['student_insights'];
-    } else {
-      const { label } = await judgeIntent(initialState.userInput);
-      isOutOfScope = label === 'out_of_scope';
+  constructor() {
+    this.nodes = new Map();
+    this.edges = new Map();
+    this.conditionalEdges = new Map();
+    this.setupWorkflow();
+  }
 
-      if (!isOutOfScope) {
-      // Topic classifier: route to classifier_topic to show agent working message only
-      const topicResult = await classifyTopic(initialState.userInput);
-      (initialState as any).context = { ...(initialState.context || {}), classifierTopic: topicResult.topic, classifierScores: topicResult.scores };
-      intent = 'classifier_topic';
-      tools = ['classifier_topic'];
+  private setupWorkflow() {
+    // Register nodes
+    this.nodes.set('process_input', processUserInput);
+    this.nodes.set('analyze_intent', analyzeIntent);
+    this.nodes.set('use_tools', useTools);
+    this.nodes.set('generate_response', generateResponse);
+    this.nodes.set('handle_error', handleError);
 
-      if (lower.includes('hava') || lower.includes('hava durumu') || lower.includes('weather')) {
-        intent = 'weather';
-        tools = ['weather'];
-      } else if (lower.includes('belge') || lower.includes('doküman') || lower.includes('document') || lower.includes('yaz') || lower.includes('oluştur')) {
-        intent = 'document';
-        tools = ['document'];
-      }
+    // Register edges
+    this.edges.set('process_input', ['analyze_intent']);
+    this.edges.set('use_tools', ['generate_response']);
+    this.edges.set('generate_response', ['__end__']);
+
+    // Register conditional edges
+    this.conditionalEdges.set('analyze_intent', (state) => {
+      if (state.context.isOutOfScope) {
+        return 'generate_response';
+      } else if (state.tools.length > 0) {
+        return 'use_tools';
       } else {
-        intent = 'out_of_scope';
+        return 'generate_response';
       }
-    }
-    
-    // Use tools 
-    const toolResults: Record<string, any> = {};
-    for (const tool of tools) {
-      if (tool === 'weather') {
-        toolResults.weather = {
-          temperature: '22°C',
-          condition: 'Sunny',
-          location: 'Current location',
-          timestamp: new Date().toISOString(),
-        };
-      } else if (tool === 'document') {
-        toolResults.document = {
-          created: true,
-          id: `doc_${Date.now()}`,
-          title: 'Generated Document',
-          content: 'Document content based on user request',
-        };
-      } else if (tool === 'student_insights') {
-        const text = lower;
-        if (text.includes('bugün ne kadar soru çözdüm')) {
-          toolResults.student_insights = { type: 'today_count', data: todaySolvedCount() };
-        } else if (text.includes('test sonuçlarım neler')) {
-          toolResults.student_insights = { type: 'results', data: testResultsSummary() };
-        } else if (text.includes('hangi tarz sorularda hata yapıyorum')) {
-          toolResults.student_insights = { type: 'error_patterns', data: errorPatterns() };
-        } else {
-          toolResults.student_insights = { type: 'unknown', data: {} };
+    });
+  }
+
+  async invoke(initialState: AgentState): Promise<AgentState> {
+    try {
+      let currentState = { ...initialState };
+      let currentNode = 'process_input';
+
+      while (currentNode !== '__end__') {
+        // Execute current node
+        const nodeFunction = this.nodes.get(currentNode);
+        if (!nodeFunction) {
+          throw new Error(`Node ${currentNode} not found`);
         }
-      } else if (tool === 'classifier_topic') {
-        const topic = ((initialState.context as any)?.classifierTopic) as string;
-        let message = '';
-        if (topic === 'danisman') message = 'danışman ajanı çalışıyor.';
-        else if (topic === 'kisisel_analiz') message = 'kişisel analiz ajanı çalışıyor.';
-        else if (topic === 'test_olusturma') message = 'test oluşturma ajanı çalışıyor.';
-        toolResults.classifier_topic = { topic, message };
+
+        const nodeResult = await nodeFunction(currentState);
+        currentState = { ...currentState, ...nodeResult };
+
+        // Determine next node
+        if (this.conditionalEdges.has(currentNode)) {
+          const conditionalFunction = this.conditionalEdges.get(currentNode)!;
+          currentNode = conditionalFunction(currentState);
+        } else if (this.edges.has(currentNode)) {
+          const nextNodes = this.edges.get(currentNode)!;
+          currentNode = nextNodes[0]; // Take first edge for now
+        } else {
+          currentNode = '__end__';
+        }
       }
+
+      return currentState;
+    } catch (error) {
+      console.error('Workflow error:', error);
+      const errorResult = await handleError(initialState);
+      return { ...initialState, ...errorResult };
     }
-    
-    // Generate response with updated state
-    const updatedState: AgentState = {
-      ...initialState,
-      messages,
-      tools,
-      context: {
-        ...initialState.context,
-        intent,
-        tools,
-        toolResults,
-        isOutOfScope,
-      },
-    };
-    
-    const result = await generateResponse(updatedState);
-    
+  }
+
+  // Add new node dynamically
+  addNode(name: string, nodeFunction: (state: AgentState) => Promise<Partial<AgentState>>) {
+    this.nodes.set(name, nodeFunction);
+  }
+
+  // Add new edge dynamically
+  addEdge(from: string, to: string) {
+    if (!this.edges.has(from)) {
+      this.edges.set(from, []);
+    }
+    this.edges.get(from)!.push(to);
+  }
+
+  // Add conditional edge dynamically
+  addConditionalEdge(from: string, conditionFunction: (state: AgentState) => string) {
+    this.conditionalEdges.set(from, conditionFunction);
+  }
+
+  // Get workflow visualization
+  getWorkflowInfo() {
     return {
-      ...initialState,
-      ...result,
-    };
-    
-  } catch (error) {
-    console.error('Workflow error:', error);
-    
-    // Return error state
-    return {
-      ...initialState,
-      currentStep: 'error',
-      isComplete: true,
-      context: {
-        ...initialState.context,
-        error: 'Workflow execution failed',
-      },
+      nodes: Array.from(this.nodes.keys()),
+      edges: Object.fromEntries(this.edges),
+      conditionalEdges: Array.from(this.conditionalEdges.keys()),
     };
   }
 }
 
-// For compatibility with existing code
-export const agentWorkflow = {
-  invoke: runAgentWorkflow,
-};
+// Create workflow instance
+export const agentWorkflow = new AgentWorkflow();
+
+// Legacy compatibility function
+export async function runAgentWorkflow(initialState: AgentState): Promise<AgentState> {
+  return agentWorkflow.invoke(initialState);
+}
